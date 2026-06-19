@@ -1,17 +1,30 @@
 # 競馬 回収率向上ファクター分析
 
-競馬の回収率（ROI）向上を目的に、予測に寄与するファクターを統計・機械学習で分析するプロジェクト。
+2022年中央競馬データを使用し、回収率（ROI）向上に寄与するファクターを統計・機械学習で分析するプロジェクト。
 
-## 分析フロー
+## データ
 
-```
-data/raw/race_results.csv
-        ↓ src/preprocess.py
-data/processed/features.csv
-        ↓ notebooks/01_eda.ipynb          ← EDA・基本統計
-        ↓ notebooks/02_feature_importance.ipynb ← LightGBM + SHAP
-        ↓ notebooks/03_roi_analysis.ipynb  ← 回収率シミュレーション
-```
+`data/raw/2022_chuo_ALL_master.csv`（2022年中央競馬 全レース、864レース・約12,000行）
+
+主要列：
+
+| 列名 | 内容 |
+|---|---|
+| 確定着順 | 最終着順 |
+| 単勝人気 / 単勝オッズ | 市場評価 |
+| 予想オッズ | モデル予想オッズ |
+| 単勝配当 / 複勝配当 | 実際の払戻金（100円あたり） |
+| 得点 / デフォルト得点 | 総合スコア |
+| 予想タイム指数 | タイムベースの能力評価 |
+| 騎手評価 / 調教師評価 | 人的要素スコア |
+| 先行指数 / 予想展開 | 展開予測 |
+| 血統総合評価 | 血統適性スコア |
+| 波乱度 / レースレベル | レース特性 |
+
+コードマッピング:
+- トラック種別コード: 0=芝, 1=ダート, 2=障害
+- 馬場状態コード: 1=良, 2=稍重, 3=重, 4=不良
+- 天候コード: 1=晴, 2=曇, 3=小雨, 4=雨
 
 ## セットアップ
 
@@ -19,76 +32,58 @@ data/processed/features.csv
 pip install -r requirements.txt
 ```
 
-## 使い方
+## 分析フロー
 
-### 1. サンプルデータ生成（実データがない場合）
-```bash
-python src/generate_sample_data.py
 ```
-`data/raw/race_results.csv` が生成される（2,000レース・約30,000行）。
+data/raw/2022_chuo_ALL_master.csv
+        ↓ python src/preprocess.py
+data/processed/features.csv
+        ↓ notebooks/01_eda.ipynb          ← EDA・基本統計
+        ↓ notebooks/02_feature_importance.ipynb ← LightGBM + SHAP
+        ↓ notebooks/03_roi_analysis.ipynb  ← 回収率シミュレーション
+```
 
-### 実データを使う場合
-`data/raw/race_results.csv` に以下の列を持つCSVを配置する：
+## 実行手順
 
-| 列名 | 型 | 説明 |
-|---|---|---|
-| race_id | int | レースID |
-| race_date | YYYY-MM-DD | 開催日 |
-| course | str | 競馬場名 |
-| distance | int | 距離（m） |
-| surface | str | 芝 / ダート |
-| condition | str | 良 / 稍重 / 重 / 不良 |
-| horse_no | int | 馬番 |
-| horse_name | str | 馬名 |
-| age | int | 馬齢 |
-| sex | str | 牡 / 牝 / 騸 |
-| weight | int | 馬体重（kg） |
-| weight_diff | int | 体重増減（kg） |
-| jockey | str | 騎手名 |
-| trainer | str | 調教師名 |
-| odds_win | float | 単勝オッズ |
-| popularity | int | 人気順 |
-| finish_pos | int | 着順 |
-| time_sec | float | タイム（秒） |
-| prize | int | 獲得賞金（万円） |
-
-### 2. 前処理・特徴量生成
 ```bash
+# 1. 前処理
 python src/preprocess.py
-```
 
-### 3. Notebook実行（順番に）
-```bash
+# 2. Notebook実行（01→02→03の順番で実行）
 jupyter notebook notebooks/
 ```
 
-## 主な分析内容
+## 分析内容
 
-### 01_eda.ipynb
-- 着順・人気分布
+### 01_eda.ipynb — 探索的データ分析
+- 着順・人気・オッズの分布
 - 人気別 勝率・単勝回収率
-- 馬体重変化と着順の関係
-- 距離・馬場別 回収率
-- 騎手別 回収率 Top/Bottom 10
+- 得点・予想タイム指数 vs 着順
+- 馬体重変化 vs 勝敗
+- 距離×馬場 別回収率
+- 予想オッズ vs 実際のオッズ（割安馬の存在確認）
 - 特徴量相関ヒートマップ
 
-### 02_feature_importance.ipynb
-- LightGBM による勝利予測（時系列CV）
-- Feature Importance（Gain / Split）
-- SHAP Summary Plot（各ファクターの方向性）
-- SHAP 依存プロット（非線形関係の可視化）
+### 02_feature_importance.ipynb — LightGBM + SHAP分析
+- 時系列クロスバリデーションで勝利予測モデルを構築
+- Feature Importance（Gain / Split）で重要ファクターを定量化
+- SHAP Summary Plotで各ファクターの方向性・強度を可視化
+- SHAP依存プロットで非線形関係を確認
 
-### 03_roi_analysis.ipynb
+### 03_roi_analysis.ipynb — 回収率評価
 - 予測確率閾値 vs 回収率カーブ
-- 予測確率 × オッズ帯域 マトリクス（「割安馬」探索）
+- 予測確率 × オッズ帯域 マトリクス（割安馬の探索）
+- オッズ乖離（`log_odds_gap`）による絞り込み効果
 - ケリー基準によるベットサイズ分析
 - 戦略別 累積損益シミュレーション
-- ファクター別 ROI（連続変数ビニング）
+- 主要ファクター別 ROI（連続変数ビニング）
+- 複勝回収率分析
 
 ## 回収率向上のキーポイント
 
-1. **オッズとモデル予測確率の乖離** — 市場が過小評価している馬を探す
-2. **騎手・調教師の実力** — Target Encodingで定量化
-3. **距離適性** — スプリント/マイル/中距離/長距離での傾向差
-4. **馬場状態の影響** — 稍重以上での得意・不得意
-5. **ケリー基準** — 期待値プラスの馬にのみ資金を投入
+1. **得点・デフォルト得点** — 着順との相関が最も高い（r≈-0.41）
+2. **予想タイム指数** — 能力の絶対評価、LightGBMで重要な特徴量
+3. **オッズ乖離（log_odds_gap）** — 実オッズ > 予想オッズの馬（市場の過小評価）
+4. **騎手評価** — 人的要素で最重要
+5. **先行指数・予想展開** — 展開利不利の定量化
+6. **前走情報** — 近走の勢い・クラス変動
