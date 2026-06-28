@@ -12,7 +12,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
-RAW = Path(__file__).parent.parent / "data" / "raw" / "2022_chuo_ALL_master.csv"
+RAW = Path(__file__).parent.parent / "data" / "raw" / "2022_chuo_ALL_full.csv"
 OUT = Path(__file__).parent.parent / "data" / "processed" / "features.csv"
 
 TRACK_MAP = {0: "芝", 1: "ダート", 2: "障害"}
