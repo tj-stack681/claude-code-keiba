@@ -118,8 +118,8 @@ def _filter_races(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _compute_score(df: pd.DataFrame, weights: dict) -> pd.Series:
-    """共通スコア計算ロジック。欠損値は各列の平均で補完。"""
+def _compute_raw(df: pd.DataFrame, weights: dict) -> pd.Series:
+    """グローバル正規化によるファクター合成（中間値）。欠損値は各列の平均で補完。"""
     raw = pd.Series(0.0, index=df.index)
     for col, weight in weights.items():
         if col not in df.columns:
@@ -127,32 +127,39 @@ def _compute_score(df: pd.DataFrame, weights: dict) -> pd.Series:
         mean, std = NORM[col]
         vals = df[col].fillna(mean)
         raw += ((vals - mean) / std * 10 + 50) * weight
-    return raw.astype(int)
+    return raw
+
+
+def _race_standardize(series: pd.Series, race_id: pd.Series) -> pd.Series:
+    """レース内偏差値変換（mean=50, std=10）。"""
+    return series.groupby(race_id).transform(
+        lambda x: (x - x.mean()) / x.std() * 10 + 50 if x.std() > 0 else 50.0
+    ).round(1)
 
 
 def compute_win_score(df: pd.DataFrame) -> pd.Series:
-    """単勝（1着）予測スコア。"""
-    return _compute_score(df, WEIGHTS_WIN)
+    """単勝（1着）予測スコア（レース内偏差値）。"""
+    return _race_standardize(_compute_raw(df, WEIGHTS_WIN), df['race_id'])
 
 
 def compute_place_score(df: pd.DataFrame) -> pd.Series:
-    """連対（2着以内）予測スコア。"""
-    return _compute_score(df, WEIGHTS_PLACE)
+    """連対（2着以内）予測スコア（レース内偏差値）。"""
+    return _race_standardize(_compute_raw(df, WEIGHTS_PLACE), df['race_id'])
 
 
 def compute_show_score(df: pd.DataFrame) -> pd.Series:
-    """三連対（3着以内）予測スコア。"""
-    return _compute_score(df, WEIGHTS_SHOW)
+    """三連対（3着以内）予測スコア（レース内偏差値）。"""
+    return _race_standardize(_compute_raw(df, WEIGHTS_SHOW), df['race_id'])
 
 
 def add_all_scores(df: pd.DataFrame, filter_races: bool = False) -> pd.DataFrame:
     """
-    3種類の得点・レース内偏差値・ランクを追加する。
+    3種類の得点（レース内偏差値）・ランクを追加する。
 
     追加列:
-      単勝得点, 単勝得点_偏差値, 単勝得点_rank
-      連対得点, 連対得点_偏差値, 連対得点_rank
-      三連対得点, 三連対得点_偏差値, 三連対得点_rank
+      単勝得点, 単勝得点_rank
+      連対得点, 連対得点_rank
+      三連対得点, 三連対得点_rank
     """
     df = df.copy()
     if filter_races:
@@ -162,9 +169,6 @@ def add_all_scores(df: pd.DataFrame, filter_races: bool = False) -> pd.DataFrame
                         ('三連対', compute_show_score)]:
         col = f'{label}得点'
         df[col] = func(df)
-        df[f'{col}_偏差値'] = df.groupby('race_id')[col].transform(
-            lambda x: (x - x.mean()) / x.std() * 10 + 50 if x.std() > 0 else 50.0
-        ).round(1)
         df[f'{col}_rank'] = (
             df.groupby('race_id')[col]
             .rank(ascending=False, method='first')
